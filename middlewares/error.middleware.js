@@ -4,7 +4,7 @@ const errorMiddleware = (err, req, res, next) => {
         
         let error = { ...err }
         error.message = err.message // error object properties such as message are NON-ENUMERABLE
-        console.error(error)
+        console.error(err)
 
         // Mongoose Bad ObjectID
         if(err.name === "CastError") {
