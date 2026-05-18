@@ -9,12 +9,14 @@ import subscriptionRouter from "./routes/subscription.routes.js"
 
 import connectDB from "./db/db.js"
 import errorMiddleware from "./middlewares/error.middleware.js"
+import arcjetMiddlware from "./middlewares/arcjet.middleware.js"
 
 const app = express()
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: false }))
 app.use(cookieParser())
+app.use(arcjetMiddlware)
 
 app.get("/", (req, res) => {
     res.send("Welcome to Subscription Tracker API")

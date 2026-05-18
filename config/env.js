@@ -8,6 +8,6 @@ export const {
     PORT = 5500,
     NODE_ENV,
     MONGO_URI, 
-    JWT_SECRET,
-    JWT_EXPIRES_IN,
+    JWT_SECRET, JWT_EXPIRES_IN,
+    ARCJET_KEY, ARCJET_ENV
 } = process.env;
