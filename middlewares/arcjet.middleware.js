@@ -13,6 +13,8 @@ const arcjetMiddlware = async (req, res, next) => {
             return res.status(403).json({ message: "Access Denied" })
         }
 
+        if (decision.isErrored()) console.error(`Arcjet API Timeout: ${decision.reason.message}`)
+
         next()
 
     } catch (error) {
