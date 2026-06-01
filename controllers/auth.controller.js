@@ -12,7 +12,7 @@ export const signUp = async (req, res, next) => {
         
         const { name, email, password } = req.body
 
-        const existingUser = await userModel.findOne({ email }).session(session)
+        const existingUser = await userModel.findOne({ email }).session(session) // RUD queries can be chained with .session(session)
 
         if(existingUser) {
             const error = new Error("User already exists")
@@ -23,7 +23,7 @@ export const signUp = async (req, res, next) => {
         const salt = await bcrypt.genSalt(10)
         const hashedPassword = await bcrypt.hash(password, salt)
 
-        const users = await userModel.create([{ name, email, password: hashedPassword }], { session })
+        const users = await userModel.create([{ name, email, password: hashedPassword }], { session }) // Create and Save queries cannot be chained, only require passing session object as second arg
 
         const token = jwt.sign(
           {
