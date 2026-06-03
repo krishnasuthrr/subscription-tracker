@@ -31,9 +31,9 @@ const createSubscriptionSchema = z.object({
 
 const updateSubscriptionSchema = createSubscriptionSchema
   .omit({
-    startDate: true,
+    startDate: true, // startDate must not be updated
   })
-  .partial()
+  .partial() // all fields optional with min 1 field
   
 
 export const createSubscription = async (req, res, next) => {
@@ -118,8 +118,8 @@ export const getSubscriptionById = async (req, res, next) => {
     const subscription = await subscriptionModel.findById(req.params.id);
 
     if (!subscription) {
-      const error = new Error("Invalid Subscription Id");
-      error.statusCode = 400;
+      const error = new Error("Subscription not found");
+      error.statusCode = 404;
       throw error;
     }
 
@@ -140,14 +140,14 @@ export const updateSubscription = async (req, res, next) => {
     const subscription = await subscriptionModel.findById(req.params.id);
 
     if (!subscription) {
-      const error = new Error("Invalid Subscription Id");
-      error.statusCode = 400;
+      const error = new Error("Subscription not found");
+      error.statusCode = 404;
       throw error;
     }
 
     if (!subscription.user.equals(req.user._id)) {
-      const error = new Error("Unauthorized User");
-      error.statusCode = 401;
+      const error = new Error("Access forbidden");
+      error.statusCode = 403;
       throw error;
     }
 
