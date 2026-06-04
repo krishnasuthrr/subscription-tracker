@@ -10,16 +10,10 @@ const sessionSchema = mongoose.Schema(
       required: true,
       index: true,
     },
-    sessionTokenHash: {
-      type: String,
-      required: true,
-      unique: true,
-      select: false,
-    },
     refreshTokenHash: {
       type: String,
       unique: true,
-      sparse: true,
+      sparse: true, // ignore when more than one null values
       select: false,
     },
     status: {
@@ -47,9 +41,9 @@ const sessionSchema = mongoose.Schema(
       required: true,
       index: true,
     },
-    deletesAt: {
+    deleteAt: {
       type: Date,
-      index: true,
+      required: true
     },
     ipAddress: {
       type: String,
@@ -62,10 +56,10 @@ const sessionSchema = mongoose.Schema(
       default: null,
     },
     device: {
-      name: {
+      browser: {
         type: String,
         trim: true,
-        default: "Unknown device",
+        default: null,
       },
       type: {
         type: String,
@@ -73,11 +67,6 @@ const sessionSchema = mongoose.Schema(
         default: "unknown",
       },
       os: {
-        type: String,
-        trim: true,
-        default: null,
-      },
-      browser: {
         type: String,
         trim: true,
         default: null,
@@ -132,7 +121,7 @@ const sessionSchema = mongoose.Schema(
 // QUERY ARCHITECTURE - ESR principle - equality, sort, range
 
 sessionSchema.index({ user: 1, status: 1, lastActiveAt: -1 }); // Compound index, works for queries such as model.find() with filters - user, status or lastActiveAt for quick operation time. Follows LTR
-sessionSchema.index({ deletesAt: 1 }, { expireAfterSeconds: 0 }); // TTL - only for single field indexes
+sessionSchema.index({ deleteAt: 1 }, { expireAfterSeconds: 0 }); // TTL - only for single field indexes
 
 sessionSchema.virtual("isActive").get(function() { // Used in controller logic - Document.isActive - promotes DRY
   return this.status === "active" && this.expiresAt > new Date();
@@ -161,7 +150,22 @@ sessionSchema.methods.revoke = function(revokedBy, revokeReason = "Session revok
   return this.save();
 };
 
-sessionSchema.pre("validate", function() {
+// for documents that require data validation, greater in heirarchy than .pre("save"), bypasses required field error
+sessionSchema.pre("validate", function() { 
+  if (!this.lastActiveAt) {
+    this.lastActiveAt = new Date();
+  }
+
+  if(!this.expiresAt) {
+    this.expiresAt = new Date(this.lastActiveAt)
+    this.expiresAt.setDate(this.expiresAt.getDate() + 30)
+  }
+
+  if(!this.deleteAt) {
+    this.deleteAt = new Date(this.expiresAt)
+    this.deleteAt.setDate(this.deleteAt.getDate() + 15);
+  }
+
   if(this.expiresAt && this.expiresAt <= new Date() && this.status === "active") {
     this.status = "expired";
     this.endedBy = "system";
