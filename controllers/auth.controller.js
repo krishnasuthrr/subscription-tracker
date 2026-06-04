@@ -1,8 +1,13 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import crypto from 'node:crypto';
 import jwt from "jsonwebtoken"
+import { UAParser } from "ua-parser-js";
+import geoip from "geoip-lite"
+
 import userModel from "../models/user.model.js";
-import { JWT_EXPIRES_IN, JWT_SECRET } from "../config/env.js";
+import sessionModel from "../models/session.model.js";
+import { JWT_ACCESS_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, JWT_SECRET } from "../config/env.js";
 
 export const signUp = async (req, res, next) => {
     const session = await mongoose.startSession();
@@ -31,7 +36,7 @@ export const signUp = async (req, res, next) => {
           },
           JWT_SECRET,
           {
-            expiresIn: JWT_EXPIRES_IN,
+            expiresIn: JWT_REFRESH_EXPIRES_IN,
           },
         );
 
@@ -76,22 +81,72 @@ export const signIn = async (req, res, next) => {
             throw error
         }
 
-        const token = jwt.sign(
+        const userAgent = req.headers["user-agent"];
+        const parsedUA = new UAParser(userAgent).getResult()
+        const ip = geoip.lookup(req.ip)
+
+        const sessionId = new mongoose.Types.ObjectId()
+
+        const refreshToken = jwt.sign(
+          {
+            userId: user._id,
+            sessionId: sessionId.toString()
+          },
+          JWT_SECRET,
+          {
+            expiresIn: JWT_REFRESH_EXPIRES_IN,
+          },
+        );
+
+        const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
+
+        const session = await sessionModel.create({
+          _id: sessionId,
+          user: user._id,
+          refreshTokenHash,
+          ipAddress: req.ip,
+          userAgent: userAgent,
+          device: {
+            browser: parsedUA.browser.name,
+            type: parsedUA.device.type,
+            os: parsedUA.os.name
+              ? `${parsedUA.os.name} ${parsedUA.os.version || ""}`.trim()
+              : null,
+            location: {
+              country: ip?.country || null,
+              region: ip?.region || null,
+              city: ip?.city || null,
+            },
+          },
+        });
+
+        const accessToken = jwt.sign(
           {
             userId: user._id,
           },
           JWT_SECRET,
           {
-            expiresIn: JWT_EXPIRES_IN,
+            expiresIn: JWT_ACCESS_EXPIRES_IN,
           },
         );
+
+        const cookieOptions = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "strict",
+          path: "/api/v1/auth/refresh",
+          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        };
+
+        res.cookie("refreshToken", refreshToken, cookieOptions)
 
         res.status(200).json({
             success: true,
             message: "User Logged In Successfully",
             data: {
                 id: user._id,
-                token
+                session,
+                accessToken
             }
         })
 
