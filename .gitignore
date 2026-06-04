@@ -63,3 +63,6 @@ typings/
 
 # notes for learning
 /notes.md
+
+# local testing
+/test.js

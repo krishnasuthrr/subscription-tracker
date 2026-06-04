@@ -1,4 +1,5 @@
 import express from "express"
+import cors from "cors"
 import cookieParser from "cookie-parser"
 
 import { PORT } from "./config/env.js"
@@ -15,6 +16,7 @@ import arcjetMiddlware from "./middlewares/arcjet.middleware.js"
 
 const app = express()
 
+app.use(cors({ origin: "http://localhost:5173" }))
 app.use(express.json({ limit: "50kb" }))
 app.use(express.urlencoded({ extended: false }))
 app.use(cookieParser())
