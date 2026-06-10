@@ -7,7 +7,9 @@ import geoip from "geoip-lite"
 
 import userModel from "../models/user.model.js";
 import sessionModel from "../models/session.model.js";
-import { JWT_ACCESS_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN, JWT_SECRET } from "../config/env.js";
+import { generateRefreshToken, generateAccessToken } from "../utils/token.util.js";
+import { JWT_REFRESH_EXPIRES_IN, JWT_SECRET } from "../config/env.js";
+import { REFRESH_EXP_MS } from "../config/auth.config.js";
 
 export const signUp = async (req, res, next) => {
     const session = await mongoose.startSession();
@@ -87,16 +89,10 @@ export const signIn = async (req, res, next) => {
 
         const sessionId = new mongoose.Types.ObjectId()
 
-        const refreshToken = jwt.sign(
-          {
-            userId: user._id,
-            sessionId: sessionId.toString()
-          },
-          JWT_SECRET,
-          {
-            expiresIn: JWT_REFRESH_EXPIRES_IN,
-          },
-        );
+        const refreshToken = generateRefreshToken({
+          userId: user._id,
+          sessionId: sessionId.toString()
+        })
 
         const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex")
 
@@ -107,8 +103,8 @@ export const signIn = async (req, res, next) => {
           ipAddress: req.ip,
           userAgent: userAgent,
           device: {
-            browser: parsedUA.browser.name,
-            type: parsedUA.device.type,
+            browser: parsedUA.browser.name || null,
+            type: parsedUA.device.type || "unknown",
             os: parsedUA.os.name
               ? `${parsedUA.os.name} ${parsedUA.os.version || ""}`.trim()
               : null,
@@ -120,22 +116,17 @@ export const signIn = async (req, res, next) => {
           },
         });
 
-        const accessToken = jwt.sign(
-          {
-            userId: user._id,
-          },
-          JWT_SECRET,
-          {
-            expiresIn: JWT_ACCESS_EXPIRES_IN,
-          },
-        );
+        const accessToken = generateAccessToken({
+          userId: user._id,
+          sessionId: sessionId.toString()
+        })
 
         const cookieOptions = {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "strict",
           path: "/api/v1/auth/refresh",
-          maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+          maxAge: REFRESH_EXP_MS
         };
 
         res.cookie("refreshToken", refreshToken, cookieOptions)

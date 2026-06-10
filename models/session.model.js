@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { SESSION_EXPIRES_DAYS } from "../config/auth.config.js";
 
 // FAT model SKINNY controller focus
 
@@ -100,7 +101,6 @@ const sessionSchema = mongoose.Schema(
     },
     revokeReason: {
       type: String,
-      required: true,
       trim: true,
       maxLength: 250,
       default: null,
@@ -158,12 +158,12 @@ sessionSchema.pre("validate", function() {
 
   if(!this.expiresAt) {
     this.expiresAt = new Date(this.lastActiveAt)
-    this.expiresAt.setDate(this.expiresAt.getDate() + 30)
+    this.expiresAt.setDate(this.expiresAt.getDate() + SESSION_EXPIRES_DAYS)
   }
 
   if(!this.deleteAt) {
     this.deleteAt = new Date(this.expiresAt)
-    this.deleteAt.setDate(this.deleteAt.getDate() + 15);
+    this.deleteAt.setDate(this.deleteAt.getDate() + SESSION_EXPIRES_DAYS);
   }
 
   if(this.expiresAt && this.expiresAt <= new Date() && this.status === "active") {
