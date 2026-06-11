@@ -136,6 +136,7 @@ sessionSchema.methods.markActive = function() {
 
 sessionSchema.methods.endSession = function(endedBy = "user") {
   this.status = "logged_out";
+  this.refreshTokenHash = null;
   this.logoutAt = new Date();
   this.endedBy = endedBy;
   return this.save();
