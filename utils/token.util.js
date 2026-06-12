@@ -7,6 +7,7 @@ export const generateRefreshToken = ({ userId, sessionId }) => {
     {
       userId,
       sessionId,
+      type: "refresh"
     },
     JWT_SECRET,
     {
@@ -22,6 +23,7 @@ export const generateAccessToken = ({ userId, sessionId }) => {
     {
       userId,
       sessionId,
+      type: "access"
     },
     JWT_SECRET,
     {
