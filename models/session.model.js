@@ -95,8 +95,7 @@ const sessionSchema = mongoose.Schema(
       default: null,
     },
     revokedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      type: String,
       default: null,
     },
     revokeReason: {
@@ -134,7 +133,7 @@ sessionSchema.methods.markActive = function() {
   return this.save();
 };
 
-sessionSchema.methods.endSession = function(endedBy = "user") {
+sessionSchema.methods.logout = function(endedBy = "user") {
   this.status = "logged_out";
   this.refreshTokenHash = null;
   this.logoutAt = new Date();
@@ -142,12 +141,13 @@ sessionSchema.methods.endSession = function(endedBy = "user") {
   return this.save();
 };
 
-sessionSchema.methods.revoke = function(revokedBy, revokeReason = "Session revoked") {
+sessionSchema.methods.revoke = function(revokedBy = "system", revokeReason = "Session revoked") {
   this.status = "revoked";
+  this.refreshTokenHash = null
   this.revokedAt = new Date();
   this.revokedBy = revokedBy;
   this.revokeReason = revokeReason;
-  this.endedBy = "user";
+  this.endedBy = revokedBy;
   return this.save();
 };
 
