@@ -1,28 +1,37 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
-import crypto from "node:crypto";
-import jwt from "jsonwebtoken";
 import { UAParser } from "ua-parser-js";
 import geoip from "geoip-lite";
+import { z } from "zod";
 
 import userModel from "../models/user.model.js";
 import sessionModel from "../models/session.model.js";
-import {
-  generateRefreshToken,
-  generateAccessToken,
-} from "../utils/token.util.js";
-import { JWT_REFRESH_EXPIRES_IN, JWT_SECRET } from "../config/env.js";
+import { generateRefreshToken, generateAccessToken } from "../utils/token.util.js";
+import { hashRefreshToken } from "../utils/middleware.util.js";
 import { authCookieOptions } from "../config/cookie.config.js";
 
 export const signUp = async (req, res, next) => {
+  const signUpSchema = z.object({
+    name: z
+      .string()
+      .trim()
+      .min(3, "name must be at least 3 characters")
+      .max(50, "name must be 50 characters or fewer"),
+    email: z
+      .string()
+      .trim()
+      .email("Please provide a valid email address")
+      .transform((value) => value.toLowerCase()),
+    password: z.string().min(6, "password must be at least 6 characters"),
+  });
+
   const session = await mongoose.startSession();
-  session.startTransaction(); // sessions for atomic DB operations
-  // all db operations in MongoDB transactions MUST contain the session object
+  session.startTransaction();
+
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password } = signUpSchema.parse(req.body);
 
-    const existingUser = await userModel.findOne({ email }).session(session); // RUD queries can be chained with .session(session)
-
+    const existingUser = await userModel.findOne({ email }).session(session);
     if (existingUser) {
       const error = new Error("User already exists");
       error.statusCode = 409;
@@ -32,44 +41,97 @@ export const signUp = async (req, res, next) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const users = await userModel.create(
+    const [user] = await userModel.create(
       [{ name, email, password: hashedPassword }],
       { session },
-    ); // Create and Save queries cannot be chained, only require passing session object as second arg
+    );
 
-    const token = jwt.sign(
-      {
-        userId: users[0]._id,
-      },
-      JWT_SECRET,
-      {
-        expiresIn: JWT_REFRESH_EXPIRES_IN,
-      },
+    const userAgent = req.headers["user-agent"] || null;
+    const parsedUA = new UAParser(userAgent).getResult();
+    const ipLookup = geoip.lookup(req.ip);
+    const sessionId = new mongoose.Types.ObjectId();
+
+    const refreshToken = generateRefreshToken({
+      userId: user._id,
+      sessionId: sessionId.toString(),
+    });
+
+    const accessToken = generateAccessToken({
+      userId: user._id,
+      sessionId: sessionId.toString(),
+    });
+
+    const refreshTokenHash = hashRefreshToken(refreshToken);
+
+    const [userSession] = await sessionModel.create(
+      [
+        {
+          _id: sessionId,
+          user: user._id,
+          refreshTokenHash,
+          ipAddress: req.ip,
+          userAgent,
+          device: {
+            browser: parsedUA.browser.name || null,
+            type: parsedUA.device.type || "unknown",
+            os: parsedUA.os.name
+              ? `${parsedUA.os.name} ${parsedUA.os.version || ""}`.trim()
+              : null,
+            location: {
+              country: ipLookup?.country || null,
+              region: ipLookup?.region || null,
+              city: ipLookup?.city || null,
+            },
+          },
+        },
+      ],
+      { session },
     );
 
     await session.commitTransaction();
     session.endSession();
 
+    res.cookie("refreshToken", refreshToken, authCookieOptions);
+
     res.status(201).json({
       success: true,
-      message: "User Created Successfully",
+      message: "User created successfully",
       data: {
-        userId: users[0]._id,
-        token,
+        userId: user._id,
+        sessionId: userSession._id,
+        accessToken,
       },
     });
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
+
+    if (error instanceof z.ZodError) {
+      const validationMessage = z.flattenError(error);
+
+      return res.status(400).json({
+        success: false,
+        message: "Auth input validation error",
+        errors: validationMessage,
+      });
+    }
     next(error);
   }
 };
 
 export const signIn = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
+  const signInSchema = z.object({
+    email: z.string().trim().email("Please provide a valid email address").transform((v) => v.toLowerCase()),
+    password: z.string().min(6, "password must be at least 6 characters"),
+  });
 
-    const user = await userModel.findOne({ email });
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { email, password } = signInSchema.parse(req.body);
+
+    const user = await userModel.findOne({ email }).session(session);
 
     if (!user) {
       const error = new Error("User not Found");
@@ -85,9 +147,9 @@ export const signIn = async (req, res, next) => {
       throw error;
     }
 
-    const userAgent = req.headers["user-agent"];
+    const userAgent = req.headers["user-agent"] || null;
     const parsedUA = new UAParser(userAgent).getResult();
-    const ip = geoip.lookup(req.ip);
+    const ipLookup = geoip.lookup(req.ip);
 
     const sessionId = new mongoose.Types.ObjectId();
 
@@ -96,35 +158,38 @@ export const signIn = async (req, res, next) => {
       sessionId: sessionId.toString(),
     });
 
-    const refreshTokenHash = crypto
-      .createHash("sha256")
-      .update(refreshToken)
-      .digest("hex");
+    const refreshTokenHash = hashRefreshToken(refreshToken);
 
-    const session = await sessionModel.create({
-      _id: sessionId,
-      user: user._id,
-      refreshTokenHash,
-      ipAddress: req.ip,
-      userAgent: userAgent,
-      device: {
-        browser: parsedUA.browser.name || null,
-        type: parsedUA.device.type || "unknown",
-        os: parsedUA.os.name
-          ? `${parsedUA.os.name} ${parsedUA.os.version || ""}`.trim()
-          : null,
-        location: {
-          country: ip?.country || null,
-          region: ip?.region || null,
-          city: ip?.city || null,
+    const [userSession] = await sessionModel.create(
+      [
+        {
+          _id: sessionId,
+          user: user._id,
+          refreshTokenHash,
+          ipAddress: req.ip,
+          userAgent,
+          device: {
+            browser: parsedUA.browser.name || null,
+            type: parsedUA.device.type || "unknown",
+            os: parsedUA.os.name ? `${parsedUA.os.name} ${parsedUA.os.version || ""}`.trim() : null,
+            location: {
+              country: ipLookup?.country || null,
+              region: ipLookup?.region || null,
+              city: ipLookup?.city || null,
+            },
+          },
         },
-      },
-    });
+      ],
+      { session },
+    );
 
     const accessToken = generateAccessToken({
       userId: user._id,
       sessionId: sessionId.toString(),
     });
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.cookie("refreshToken", refreshToken, authCookieOptions);
 
@@ -133,11 +198,23 @@ export const signIn = async (req, res, next) => {
       message: "User Logged In Successfully",
       data: {
         id: user._id,
-        session,
+        session: userSession,
         accessToken,
       },
     });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
+    if (error instanceof z.ZodError) {
+      const validationMessage = z.flattenError(error);
+
+      return res.status(400).json({
+        success: false,
+        message: "Auth input validation error",
+        errors: validationMessage,
+      });
+    }
     next(error);
   }
 };

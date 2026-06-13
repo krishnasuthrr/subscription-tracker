@@ -65,7 +65,6 @@ export const createSubscription = async (req, res, next) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       const validationMessage = z.flattenError(error)
-      console.log(validationMessage)
       
       return res.status(400).json({
         success: false,
