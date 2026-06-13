@@ -18,11 +18,42 @@ export function extractRefreshToken(req) {
 }
 
 export function verifyToken(token) {
+  verifyToken.failureReason = null;
+
   try {
     return jwt.verify(token, JWT_SECRET);
-  } catch {
+  } catch (error) {
+    verifyToken.failureReason = getFailureReason(error);
     return null;
   }
+}
+
+function getFailureReason(error) {
+  if (error instanceof jwt.TokenExpiredError) {
+    return "Expired token";
+  }
+
+  if (error instanceof jwt.NotBeforeError) {
+    return "Token not active";
+  }
+
+  if (error instanceof jwt.JsonWebTokenError) {
+    if (error.message === "invalid signature") {
+      return "Invalid secret";
+    }
+
+    if (error.message === "jwt malformed") {
+      return "Malformed token";
+    }
+
+    if (error.message === "jwt must be provided") {
+      return "Missing token";
+    }
+
+    return "Invalid token";
+  }
+
+  return "Token verification failed";
 }
 
 export function hashRefreshToken(token) {
