@@ -78,7 +78,7 @@ export const logoutMiddleware = async (req, res, next) => {
 
     const session = await sessionModel.findById(auth.sessionId).select("+refreshTokenHash")
 
-    if (!session || session.status !== "active") {
+    if (!session || !session.isActive) {
       return next()
     }
 
